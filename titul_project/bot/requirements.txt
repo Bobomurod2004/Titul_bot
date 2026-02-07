@@ -1,0 +1,2 @@
+# Bot requirements (already in main requirements.txt)
+# This file is for reference only

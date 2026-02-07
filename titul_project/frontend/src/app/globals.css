@@ -1,0 +1,93 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #4F46E5;
+  --primary-dark: #4338CA;
+  --primary-light: #EEF2FF;
+  --secondary: #10B981;
+  --secondary-dark: #059669;
+  --secondary-light: #ECFDF5;
+  --glass: rgba(255, 255, 255, 0.8);
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: radial-gradient(circle at top left, #f8fafc, #f1f5f9);
+  color: #1e293b;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: 'Outfit', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Glassmorphism Card */
+.titul-card {
+  @apply bg-white/80 backdrop-blur-xl rounded-[2.5rem] border border-white/50 p-6 md:p-10 shadow-titul transition-all duration-300;
+}
+
+.titul-card:hover {
+  @apply shadow-titul-hover;
+}
+
+/* Exam Styled Question Row */
+.question-row {
+  @apply bg-white rounded-2xl border border-gray-100 p-4 md:p-5 flex items-center justify-between gap-4 transition-all duration-300 hover:shadow-lg hover:border-primary/20;
+}
+
+.question-row.active {
+  @apply border-primary/30 bg-primary/[0.02] shadow-inner;
+}
+
+/* Answer Circles */
+.circle-check {
+  @apply w-11 h-11 rounded-full border-2 border-slate-200 flex items-center justify-center font-bold text-slate-500 transition-all duration-300 cursor-pointer bg-white;
+}
+
+.circle-check:hover:not(.active) {
+  @apply border-primary bg-primary-light text-primary scale-105;
+}
+
+.circle-check.active {
+  @apply border-primary bg-primary text-white shadow-active-check scale-110;
+}
+
+/* Custom Input & Select */
+.input-premium {
+  @apply w-full p-4 rounded-2xl border-2 border-slate-100 bg-slate-50/50 focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all duration-300 outline-none text-slate-700 font-medium placeholder:text-slate-400;
+}
+
+.select-premium {
+  @apply w-full p-4 rounded-2xl border-2 border-slate-100 bg-slate-50/50 focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all duration-300 outline-none appearance-none cursor-pointer;
+}
+
+/* Buttons */
+.btn-primary {
+  @apply bg-primary hover:bg-primary-dark text-white font-bold py-4 px-8 rounded-2xl transition-all duration-300 shadow-btn-primary active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50 disabled:pointer-events-none;
+}
+
+.btn-secondary {
+  @apply bg-secondary hover:bg-secondary-dark text-white font-bold py-4 px-8 rounded-2xl transition-all duration-300 shadow-btn-secondary active:scale-95 flex items-center justify-center gap-3;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full hover:bg-slate-300;
+}
