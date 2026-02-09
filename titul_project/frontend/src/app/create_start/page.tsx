@@ -5,11 +5,11 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
      Plus, Send, BookOpen, AlertCircle, ChevronDown, CheckCircle2,
-     User, Timer, ArrowRight, ArrowLeft, Info, AlertTriangle, XCircle, Edit3, Trash2
+     User, Timer, ArrowRight, ArrowLeft, Info, AlertTriangle, XCircle, Edit3, Trash2, Clock
 } from "lucide-react";
 import api from "@/lib/api";
 
-const SUBJECTS = ["Matematika", "Tarix", "Ona tili", "Ingliz tili", "Kimyo", "Biologiya", "Fizika", "Geografiya"];
+const SUBJECTS = ["Matematika", "Tarix", "Ona tili", "Ingliz tili", "Kimyo", "Biologiya", "Fizika", "Geografiya", "Rus tili", "Qoraqalpoq tili"];
 
 export default function CreateTestPage() {
      const searchParams = useSearchParams();
@@ -28,24 +28,72 @@ export default function CreateTestPage() {
      const [subject, setSubject] = useState(SUBJECTS[0]);
      const [expiresAt, setExpiresAt] = useState("");
      const [submissionMode, setSubmissionMode] = useState("single");
+     const [subType, setSubType] = useState<string | null>(null);
 
      // Questions state refined for parts and alternatives
-     const [questions, setQuestions] = useState<any[]>(
-          Array.from({ length: 35 }, (_, i) => ({
+     const [questions, setQuestions] = useState<any[]>([]);
+
+     // Initialize questions based on subject
+     useEffect(() => {
+          if (isEdit) return;
+
+          // Initialize with 35 choice questions
+          const newQs = Array.from({ length: 35 }, (_, i) => ({
                question_number: i + 1,
                question_type: "choice",
                correct_answer: "",
                points: 1.0,
-               parts: [{ alternatives: [""] }] // Default structure for writing
-          }))
-     );
+               parts: [{ alternatives: [""] }]
+          }));
+          setQuestions(newQs);
+     }, [subject, subType, isEdit]);
 
      // UI State
      const [loading, setLoading] = useState(false);
      const [initialLoading, setInitialLoading] = useState(isEdit);
-     const [error, setError] = useState("");
      const [showSuccess, setShowSuccess] = useState(false);
      const [accessCode, setAccessCode] = useState("");
+
+     // Premium Toast State
+     const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "warning" } | null>(null);
+
+     const showToast = (message: string, type: "success" | "error" | "warning" = "success") => {
+          setToast({ message, type });
+          setTimeout(() => setToast(null), 4000);
+     };
+
+     const parseBackendError = (data: any): string => {
+          if (!data) return "Xatolik yuz berdi";
+          if (typeof data === 'string') return data;
+          if (data.detail) return data.detail;
+
+          // Recursive extraction of messages from nested objects (Django Rest Framework style)
+          const errors: string[] = [];
+
+          const extract = (obj: any, prefix = "") => {
+               if (typeof obj === 'string') {
+                    errors.push(`${prefix}${obj}`);
+               } else if (Array.isArray(obj)) {
+                    obj.forEach(val => extract(val, prefix));
+               } else if (typeof obj === 'object') {
+                    Object.entries(obj).forEach(([key, value]) => {
+                         // Translate common keys or leave as is if they are numbers (question indexes)
+                         let translatedKey = key;
+                         if (key === "questions") translatedKey = "Savollar: ";
+                         else if (key === "correct_answer") translatedKey = "Javob";
+                         else if (key === "points") translatedKey = "Ball";
+                         else if (key === "title") translatedKey = "Test nomi";
+                         else if (!isNaN(Number(key))) translatedKey = `${Number(key) + 1}-savol: `; // Question index to number
+
+                         const finalPrefix = translatedKey === key ? "" : translatedKey;
+                         extract(value, prefix + finalPrefix);
+                    });
+               }
+          };
+
+          extract(data);
+          return errors.length > 0 ? errors.join(" | ") : "Ma'lumotlarda xatolik aniqlandi";
+     };
 
      // Load initial data for edit mode
      useEffect(() => {
@@ -56,6 +104,7 @@ export default function CreateTestPage() {
                          const test = res.data;
                          setTitle(test.title);
                          setSubject(test.subject);
+                         setSubType(test.sub_type || null);
                          setCreatorName(test.creator_name || "");
                          if (test.expires_at) {
                               setExpiresAt(new Date(test.expires_at).toISOString().slice(0, 16));
@@ -64,30 +113,41 @@ export default function CreateTestPage() {
 
                          // Map existing questions to our state
                          const existingQs = test.questions || [];
-                         const mappedQs = Array.from({ length: Math.max(35, existingQs.length) }, (_, i) => {
-                              const found = existingQs.find((q: any) => q.question_number === i + 1);
-                              if (found && found.question_type === 'writing') {
+                         const mappedQs = existingQs.map((q: any) => {
+                              if (q.question_type === 'writing') {
                                    try {
-                                        const parsed = JSON.parse(found.correct_answer);
+                                        const parsed = JSON.parse(q.correct_answer);
                                         return {
-                                             ...found,
-                                             parts: Array.isArray(parsed) ? parsed.map((p: any) => ({ alternatives: Array.isArray(p) ? p : [p] })) : [{ alternatives: [found.correct_answer] }]
+                                             ...q,
+                                             parts: Array.isArray(parsed) ? parsed.map((p: any) => ({ alternatives: Array.isArray(p) ? p : [p] })) : [{ alternatives: [q.correct_answer] }]
                                         };
                                    } catch {
-                                        return { ...found, parts: [{ alternatives: [found.correct_answer] }] };
+                                        return { ...q, parts: [{ alternatives: [q.correct_answer] }] };
                                    }
                               }
-                              return found || {
-                                   question_number: i + 1,
-                                   question_type: i >= 35 ? "writing" : "choice",
-                                   correct_answer: "",
-                                   parts: [{ alternatives: [""] }]
+                              return {
+                                   ...q,
+                                   parts: q.parts || [{ alternatives: [""] }]
                               };
                          });
-                         setQuestions(mappedQs);
+
+                         // Ensure at least 35 questions if edited test had fewer
+                         if (mappedQs.length < 35) {
+                              const extraQs = Array.from({ length: 35 - mappedQs.length }, (_, i) => ({
+                                   question_number: mappedQs.length + i + 1,
+                                   question_type: "choice",
+                                   correct_answer: "",
+                                   points: 1.0,
+                                   parts: [{ alternatives: [""] }]
+                              }));
+                              setQuestions([...mappedQs, ...extraQs]);
+                         } else {
+                              setQuestions(mappedQs);
+                         }
+
                          setAccessCode(test.access_code);
                     } catch (err) {
-                         setError("Test ma'lumotlarini yuklashda xatolik yuz berdi.");
+                         showToast("Test ma'lumotlarini yuklashda xatolik yuz berdi.", "error");
                     } finally {
                          setInitialLoading(false);
                     }
@@ -165,13 +225,58 @@ export default function CreateTestPage() {
      };
 
      const addWritingQuestion = () => {
+          const nextNum = questions.length + 1;
+          const isLanguage = ["Ona tili", "Rus tili", "Qoraqalpoq tili"].includes(subject);
+          const isScience = ["Matematika", "Fizika", "Geografiya", "Tarix"].includes(subject);
+          const isChemBio = ["Kimyo", "Biologiya"].includes(subject);
+
+          let maxCount = 45;
+          if (isChemBio) {
+               maxCount = (subType === "tur2") ? 43 : 40;
+          }
+
+          if (nextNum > maxCount) {
+               showToast(`Maksimal savollar soniga yetdingiz: ${maxCount}`, "warning");
+               return;
+          }
+
+          let qType = "writing";
+          let qPoints = 2.0;
+
+          // SPECIAL RULES PER USER REQUEST:
+          // 1. Math, Physics, History, Geo: 1-45 are all Writing
+          if (isScience) {
+               qType = "writing";
+               qPoints = 2.0;
+          }
+          // 2. Language subjects: 36-44 Writing, 45 Manual
+          else if (isLanguage) {
+               if (nextNum === 45) {
+                    qType = "manual";
+                    qPoints = 10;
+               } else {
+                    qType = "writing";
+                    qPoints = 2.0;
+               }
+          }
+          // 3. Chemistry/Biology: Existing Tur1/Tur2 rules
+          else if (isChemBio) {
+               if (subType === "tur2" && nextNum >= 41) {
+                    qType = "manual";
+                    if (subject === "Kimyo") qPoints = 25;
+                    else if (nextNum === 41) qPoints = 30;
+                    else if (nextNum === 42) qPoints = 35;
+                    else qPoints = 10;
+               }
+          }
+
           setQuestions([
                ...questions,
                {
-                    question_number: questions.length + 1,
-                    question_type: "writing",
+                    question_number: nextNum,
+                    question_type: qType,
                     correct_answer: "",
-                    points: 2.0,
+                    points: qPoints,
                     parts: [{ alternatives: [""] }]
                },
           ]);
@@ -185,24 +290,36 @@ export default function CreateTestPage() {
 
      const validateStep1 = () => {
           if (!creatorName.trim()) {
-               setError("Iltimos, tuzuvchi ism-familiyasini kiriting!");
+               showToast("Tuzuvchi ism-familiyasini kiriting!", "warning");
                return false;
           }
           if (!title.trim()) {
-               setError("Iltimos, test nomini kiriting!");
+               showToast("Test nomini kiriting!", "warning");
                return false;
           }
-          setError("");
           return true;
      };
 
      const handleSaveTest = async () => {
-          const hasAnswers = questions.some(q =>
-               q.question_type === 'choice' ? q.correct_answer !== "" : q.parts.some((p: any) => p.alternatives.some((a: any) => a !== ""))
-          );
-          if (!hasAnswers) {
-               setError("Kamida bitta savolga javob belgilang!");
-               return;
+          // Detailed Client-Side Validation
+          for (const q of questions) {
+               if (q.question_type === 'choice') {
+                    if (q.correct_answer === "" && q.question_number <= 35) {
+                         showToast(`${q.question_number}-savol javobi belgilanmagan!`, "warning");
+                         return;
+                    }
+               } else if (q.question_type === 'writing') {
+                    const hasSomeAnswer = q.parts.some((p: any) => p.alternatives.some((a: any) => a.trim() !== ""));
+                    if (!hasSomeAnswer) {
+                         showToast(`${q.question_number}-savolga kalit kiritilmagan!`, "warning");
+                         return;
+                    }
+               }
+               // Manual scoring questions usually don't need required answers, but points must be valid
+               if (isNaN(q.points) || q.points < 0) {
+                    showToast(`${q.question_number}-savol bali noto'g'ri!`, "warning");
+                    return;
+               }
           }
 
           if (expiresAt) {
@@ -212,39 +329,42 @@ export default function CreateTestPage() {
                maxExpiry.setDate(maxExpiry.getDate() + 7);
 
                if (expires <= now) {
-                    setError("Tugash vaqti hozirgi vaqtdan keyin bo'lishi kerak!");
+                    showToast("Tugash vaqti noto'g'ri!", "error");
                     return;
                }
                if (expires > maxExpiry) {
-                    setError("Test muddati 1 haftadan oshmasligi kerak!");
+                    showToast("Muddat 1 haftadan oshmasligi kerak!", "warning");
                     return;
                }
           }
 
           setLoading(true);
-          setError("");
           try {
                const payload = {
                     creator_id: Number(telegramId),
                     creator_name: creatorName,
                     title,
                     subject,
+                    sub_type: subType,
                     submission_mode: submissionMode,
                     expires_at: expiresAt || null,
                     questions: questions.filter(q => {
                          if (q.question_type === 'choice') return q.correct_answer !== "";
+                         if (q.question_type === 'manual') return true;
                          return q.parts.some((p: any) => p.alternatives.some((a: any) => a !== ""));
                     }).map(q => {
                          let ans = q.correct_answer;
                          if (q.question_type === 'writing') {
                               ans = JSON.stringify(q.parts.map((p: any) => p.alternatives.filter((a: any) => a !== "")));
+                         } else if (q.question_type === 'manual') {
+                              // Manual savollar qo'lda baholanadi, correct_answer kerak emas
+                              ans = null;
                          }
                          return {
                               question_number: q.question_number,
                               question_type: q.question_type,
                               correct_answer: ans,
                               points: q.points
-
                          }
                     }),
                };
@@ -258,17 +378,11 @@ export default function CreateTestPage() {
 
                setAccessCode(response.data.access_code);
                setShowSuccess(true);
+               showToast(isEdit ? "O'zgarishlar saqlandi!" : "Test yaratildi!", "success");
           } catch (err: any) {
                const errorData = err.response?.data;
-               let errorMessage = "Xatolik yuz berdi";
-
-               if (errorData) {
-                    if (typeof errorData === 'string') errorMessage = errorData;
-                    else if (errorData.detail) errorMessage = errorData.detail;
-                    else errorMessage = JSON.stringify(errorData);
-               }
-
-               setError(errorMessage);
+               const errorMessage = parseBackendError(errorData);
+               showToast(errorMessage, "error");
           } finally {
                setLoading(false);
           }
@@ -343,28 +457,6 @@ export default function CreateTestPage() {
                               exit={{ opacity: 0, x: 20 }}
                               className="space-y-8"
                          >
-                              {/* Announcements Section */}
-                              {!isEdit && announcements.length > 0 && (
-                                   <div className="space-y-4 mb-10">
-                                        {announcements.map((ann) => (
-                                             <div key={ann.id} className={`p-6 rounded-[2rem] border-2 flex gap-5 ${ann.type === 'danger' ? 'bg-red-50/50 border-red-100 text-red-900' :
-                                                  ann.type === 'warning' ? 'bg-orange-50/50 border-orange-100 text-orange-900' :
-                                                       'bg-blue-50/50 border-blue-100 text-blue-900'
-                                                  }`}>
-                                                  <div className="mt-1">
-                                                       {ann.type === 'danger' ? <XCircle className="text-red-500" /> :
-                                                            ann.type === 'warning' ? <AlertTriangle className="text-orange-500" /> :
-                                                                 <Info className="text-blue-500" />}
-                                                  </div>
-                                                  <div>
-                                                       <h4 className="font-black text-sm uppercase tracking-widest mb-2">{ann.title}</h4>
-                                                       <p className="text-sm font-medium leading-relaxed opacity-80">{ann.content}</p>
-                                                  </div>
-                                             </div>
-                                        ))}
-                                   </div>
-                              )}
-
                               <div className="titul-card">
                                    <div className="flex items-center gap-5 mb-10 pb-10 border-b-2 border-slate-50">
                                         <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
@@ -412,6 +504,24 @@ export default function CreateTestPage() {
                                                   <ChevronDown size={20} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                              </div>
                                         </div>
+
+                                        {(subject === "Kimyo" || subject === "Biologiya") && (
+                                             <div className="space-y-3">
+                                                  <label className="text-sm font-bold text-slate-500 ml-1 uppercase tracking-wider">Test Turi (Turni tanlang)</label>
+                                                  <div className="relative">
+                                                       <select
+                                                            className="select-premium border-secondary/20"
+                                                            value={subType || "tur1"}
+                                                            onChange={(e) => setSubType(e.target.value)}
+                                                       >
+                                                            <option value="tur1">1-tur (faqat 1–40 savollar)</option>
+                                                            <option value="tur2">2-tur (41–43 ball kiritish bilan)</option>
+                                                       </select>
+                                                       <ChevronDown size={20} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                                  </div>
+                                             </div>
+                                        )}
+
                                         <div className="space-y-3">
                                              <label className="text-sm font-bold text-slate-500 ml-1 uppercase tracking-wider">Test topshirish rejimi</label>
                                              <div className="relative">
@@ -424,6 +534,18 @@ export default function CreateTestPage() {
                                                        <option value="multiple">♻️ Cheksiz topshirish mumkin</option>
                                                   </select>
                                                   <ChevronDown size={20} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                             </div>
+                                             <div className="space-y-3">
+                                                  <label className="text-sm font-bold text-slate-500 ml-1 uppercase tracking-wider flex items-center gap-2">
+                                                       <Clock size={16} className="text-amber-500" /> Test Tugash Vaqti (Ixtiyoriy)
+                                                  </label>
+                                                  <input
+                                                       type="datetime-local"
+                                                       className="input-premium border-amber-100 bg-amber-50/10 focus:border-amber-500 focus:ring-amber-500/10"
+                                                       value={expiresAt}
+                                                       onChange={(e) => setExpiresAt(e.target.value)}
+                                                  />
+                                                  <p className="text-[10px] text-slate-400 italic ml-1">Belgilangan vaqtdan keyin test avtomatik yakunlanadi.</p>
                                              </div>
                                         </div>
                                    </div>
@@ -451,7 +573,7 @@ export default function CreateTestPage() {
                               <div>
                                    <div className="flex items-center gap-3 mb-8 ml-2">
                                         <div className="w-10 h-10 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600 font-bold">1</div>
-                                        <h2 className="text-2xl font-black font-display text-slate-800">Variantli Savollar (1-35)</h2>
+                                        <h2 className="text-2xl font-black font-display text-slate-800">Test Javoblari</h2>
                                    </div>
 
                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -459,23 +581,63 @@ export default function CreateTestPage() {
                                              q.question_type === "choice" && (
                                                   <div
                                                        key={idx}
-                                                       className={`question-row ${q.correct_answer ? 'active' : ''}`}
+                                                       className={`question-row !p-4 md:!p-5 flex-col sm:flex-row !items-start sm:!items-center gap-4 ${q.correct_answer ? 'active' : ''}`}
                                                   >
-                                                       <div className="flex items-center gap-4">
+                                                       <div className="flex items-center justify-between w-full sm:w-auto">
                                                             <span className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center font-black text-slate-400 text-sm border border-slate-100">
                                                                  {q.question_number}
                                                             </span>
-                                                       </div>
-                                                       <div className="flex gap-2 sm:gap-4">
-                                                            {["A", "B", "C", "D"].map((choice) => (
-                                                                 <div
-                                                                      key={choice}
-                                                                      onClick={() => handleChoice(idx, choice)}
-                                                                      className={`circle-check !w-12 !h-12 !text-lg ${q.correct_answer === choice ? 'active' : ''}`}
-                                                                 >
-                                                                      {choice}
+                                                            {q.correct_answer && (
+                                                                 <div className="sm:hidden bg-primary/10 text-primary px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest">
+                                                                      Kalit: {q.correct_answer}
                                                                  </div>
-                                                            ))}
+                                                            )}
+                                                       </div>
+                                                       <div className="grid grid-cols-6 sm:flex sm:flex-wrap gap-2 md:gap-3 w-full justify-center sm:justify-start">
+                                                            {(q.question_number >= 33 && q.question_number <= 35)
+                                                                 ? ["A", "B", "C", "D", "E", "F"].map((choice) => (
+                                                                      <div
+                                                                           key={choice}
+                                                                           onClick={() => handleChoice(idx, choice)}
+                                                                           className={`circle-check !w-8 !h-8 !text-xs sm:!w-10 sm:!h-10 sm:!text-sm ${q.correct_answer === choice ? 'active' : ''}`}
+                                                                      >
+                                                                           {choice}
+                                                                      </div>
+                                                                 ))
+                                                                 : ["A", "B", "C", "D"].map((choice) => (
+                                                                      <div
+                                                                           key={choice}
+                                                                           onClick={() => handleChoice(idx, choice)}
+                                                                           className={`circle-check !w-10 !h-10 !text-sm sm:!w-12 sm:!h-12 sm:!text-base ${q.correct_answer === choice ? 'active' : ''}`}
+                                                                      >
+                                                                           {choice}
+                                                                      </div>
+                                                                 ))
+                                                            }
+                                                       </div>
+                                                  </div>
+                                             )
+                                        ))}
+                                        {questions.map((q, idx) => (
+                                             q.question_type === "manual" && (
+                                                  <div key={idx} className="bg-white p-6 rounded-3xl border-2 border-slate-100 flex items-center justify-between gap-4">
+                                                       <div className="flex items-center gap-4">
+                                                            <span className="w-10 h-10 bg-secondary/5 rounded-xl flex items-center justify-center font-black text-secondary text-sm border border-secondary/10">
+                                                                 {q.question_number}
+                                                            </span>
+                                                            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                                                                 {q.question_number === 45 && ["Ona tili", "Rus tili", "Qoraqalpoq tili"].includes(subject) ? "Esse Bali" : "Qo'lda kiritiladigan ball"}
+                                                            </span>
+                                                       </div>
+                                                       <div className="flex items-center gap-2">
+                                                            <span className="text-[10px] font-black text-slate-400">MAX:</span>
+                                                            <input
+                                                                 type="number"
+                                                                 step="0.1"
+                                                                 className="w-16 h-8 bg-slate-50 border border-slate-200 rounded-lg text-center text-xs font-black text-primary"
+                                                                 value={q.points}
+                                                                 onChange={(e) => updatePoints(idx, e.target.value)}
+                                                            />
                                                        </div>
                                                   </div>
                                              )
@@ -483,7 +645,7 @@ export default function CreateTestPage() {
                                    </div>
                               </div>
 
-                              {/* Writing Questions Section - NEW MULTIPART UI */}
+                              {/* Writing Questions Section */}
                               <div>
                                    <div className="flex items-center justify-between mb-8 ml-2 px-2">
                                         <div className="flex items-center gap-3">
@@ -521,7 +683,6 @@ export default function CreateTestPage() {
                                                                            />
                                                                       </div>
                                                                       <span className="block font-black text-slate-800 uppercase tracking-widest text-xs">Yozma Javob Kaliti</span>
-
                                                                       <span className="text-slate-400 text-xs font-bold uppercase tracking-wider">{q.parts.length} qismdan iborat</span>
                                                                  </div>
                                                             </div>
@@ -547,12 +708,12 @@ export default function CreateTestPage() {
                                                                                      onClick={() => addAlternative(actualIdx, pIdx)}
                                                                                      className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg font-bold text-[10px] hover:bg-emerald-100 transition-all border border-emerald-100"
                                                                                 >
-                                                                                     <Plus size={12} /> Muqobil
+                                                                                     <Plus size={14} /> Kalit qo'shish
                                                                                 </button>
                                                                                 {q.parts.length > 1 && (
                                                                                      <button
                                                                                           onClick={() => removePart(actualIdx, pIdx)}
-                                                                                          className="p-1 text-red-300 hover:text-red-500 transition-colors"
+                                                                                          className="p-1 text-red-400 hover:text-red-600 transition-colors"
                                                                                      >
                                                                                           <Trash2 size={16} />
                                                                                      </button>
@@ -560,26 +721,37 @@ export default function CreateTestPage() {
                                                                            </div>
                                                                       </div>
 
-                                                                      <div className="space-y-3">
-                                                                           {part.alternatives.map((alt: string, aIdx: number) => (
-                                                                                <div key={aIdx} className="flex gap-2 group">
-                                                                                     <input
-                                                                                          type="text"
-                                                                                          placeholder={aIdx === 0 ? "Asosiy javob (masalan: 12.5)" : "Muqobil javob (masalan: 12,5)"}
-                                                                                          className={`input-premium !py-3 !text-sm ${aIdx === 0 ? '!bg-white' : '!bg-emerald-50/30 !border-emerald-100'}`}
-                                                                                          value={alt}
-                                                                                          onChange={(e) => updateAlternative(actualIdx, pIdx, aIdx, e.target.value)}
-                                                                                     />
-                                                                                     {part.alternatives.length > 1 && (
-                                                                                          <button
-                                                                                               onClick={() => removeAlternative(actualIdx, pIdx, aIdx)}
-                                                                                               className="p-2 text-slate-200 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                                                                                          >
-                                                                                               <XCircle size={18} />
-                                                                                          </button>
-                                                                                     )}
-                                                                                </div>
-                                                                           ))}
+                                                                      <div className="space-y-4">
+                                                                           <div className="flex items-center justify-between px-1">
+                                                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">To'g'ri javob variantlari (Kalitlar)</span>
+                                                                           </div>
+
+                                                                           <div className="flex flex-col gap-3">
+                                                                                {part.alternatives.map((alt: string, aIdx: number) => (
+                                                                                     <div key={aIdx} className="relative group/alt flex items-center gap-3">
+                                                                                          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-400 shrink-0">
+                                                                                               {String.fromCharCode(65 + aIdx)}
+                                                                                          </div>
+                                                                                          <div className="relative flex-1">
+                                                                                               <input
+                                                                                                    type="text"
+                                                                                                    placeholder="To'g'ri javobni kiriting..."
+                                                                                                    className="w-full !py-4 !px-5 !rounded-2xl border-2 border-white bg-white focus:border-primary/40 outline-none transition-all text-base font-bold shadow-sm"
+                                                                                                    value={alt}
+                                                                                                    onChange={(e) => updateAlternative(actualIdx, pIdx, aIdx, e.target.value)}
+                                                                                               />
+                                                                                               {part.alternatives.length > 1 && (
+                                                                                                    <button
+                                                                                                         onClick={() => removeAlternative(actualIdx, pIdx, aIdx)}
+                                                                                                         className="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover/alt:opacity-100 text-slate-300 hover:text-red-500 transition-all p-1"
+                                                                                                    >
+                                                                                                         <Trash2 size={18} />
+                                                                                                    </button>
+                                                                                               )}
+                                                                                          </div>
+                                                                                     </div>
+                                                                                ))}
+                                                                           </div>
                                                                       </div>
                                                                  </div>
                                                             ))}
@@ -590,110 +762,49 @@ export default function CreateTestPage() {
                                    </div>
                               </div>
 
-                              <div className="flex gap-4">
-                                   <button onClick={() => setStep(1)} className="btn-secondary !bg-slate-200 !text-slate-600 !shadow-none py-6 flex-1">
-                                        <ArrowLeft />
-                                        Orqaga
-                                   </button>
-                                   <button onClick={() => setStep(3)} className="btn-primary py-6 flex-[2]">
-                                        Keyingi Bosqich (Yakunlash)
-                                        <ArrowRight />
-                                   </button>
-                              </div>
-                         </motion.div>
-                    )}
-
-                    {step === 3 && (
-                         <motion.div
-                              key="step3"
-                              initial={{ opacity: 0, scale: 0.9 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.9 }}
-                              className="space-y-8"
-                         >
-                              <div className="titul-card">
-                                   <div className="flex items-center gap-5 mb-10 pb-10 border-b-2 border-slate-50">
-                                        <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                                             <Timer size={32} />
-                                        </div>
-                                        <div>
-                                             <h2 className="text-3xl font-black font-display text-slate-900">Test Vaqti</h2>
-                                             <p className="text-slate-400 font-medium">Test qachongacha faol bo'lishini belgilang</p>
-                                        </div>
-                                   </div>
-
-                                   <div className="space-y-6">
-                                        <div className="bg-slate-50/50 p-8 rounded-3xl border-2 border-slate-100">
-                                             <label className="text-sm font-bold text-slate-500 uppercase tracking-wider block mb-4">Yakunlanish sanasi va vaqti</label>
-                                             <input
-                                                  type="datetime-local"
-                                                  className="input-premium !bg-white"
-                                                  value={expiresAt}
-                                                  min={getMinDateTime()}
-                                                  max={getMaxDateTime()}
-                                                  onChange={(e) => setExpiresAt(e.target.value)}
-                                             />
-                                             <p className="mt-4 text-sm text-slate-400 font-medium italic">
-                                                  {expiresAt ? 'Test ushbu vaqtda avtomatik yakunlanadi.' : 'Vaqt belgilanmasa, testni qo\'lda yakunlashingiz kerak bo\'ladi.'}
-                                             </p>
-                                        </div>
-
-                                        <div className="bg-primary/5 p-8 rounded-3xl border-2 border-primary/10">
-                                             <h4 className="font-black text-slate-800 mb-4 flex items-center gap-3">
-                                                  <CheckCircle2 className="text-primary" />
-                                                  Test qisqacha mazmuni:
-                                             </h4>
-                                             <ul className="space-y-3 text-slate-600 font-medium">
-                                                  <li>• Fan: <span className="font-bold text-slate-900">{subject}</span></li>
-                                                  <li>• Nom: <span className="font-bold text-slate-900">{title}</span></li>
-                                                  <li>• Savollar: <span className="font-bold text-slate-900">{questions.filter(q => q.question_type === 'choice' ? q.correct_answer : q.parts.some((p: any) => p.alternatives.some((a: any) => a))).length} ta</span></li>
-                                                  <li>• Tuzuvchi: <span className="font-bold text-slate-900">{creatorName}</span></li>
-                                             </ul>
-                                        </div>
-                                   </div>
-                              </div>
-
-                              {error && (
-                                   <motion.div
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className="bg-red-50 text-red-600 p-6 rounded-2xl flex items-center gap-4 font-bold border-2 border-red-100"
+                              <div className="flex flex-col sm:flex-row gap-4 pt-10">
+                                   <button
+                                        onClick={() => setStep(1)}
+                                        className="flex-1 py-5 px-8 rounded-2xl border-2 border-slate-100 font-bold text-slate-400 hover:bg-slate-50 transition-all flex items-center justify-center gap-3"
                                    >
-                                        <AlertCircle />
-                                        {error}
-                                   </motion.div>
-                              )}
-
-                              <div className="flex gap-4">
-                                   <button onClick={() => setStep(2)} className="btn-secondary !bg-slate-200 !text-slate-600 !shadow-none py-6 flex-1">
-                                        <ArrowLeft />
-                                        Orqaga
+                                        <ArrowLeft /> Orqaga
                                    </button>
                                    <button
                                         onClick={handleSaveTest}
                                         disabled={loading}
-                                        className="btn-primary py-6 flex-[2] relative overflow-hidden"
+                                        className="flex-[2] btn-primary py-5 text-xl"
                                    >
-                                        {loading ? (
-                                             <div className="flex items-center gap-3">
-                                                  <div className="w-6 h-6 border-4 border-white border-t-transparent animate-spin rounded-full"></div>
-                                                  Saqlanmoqda...
-                                             </div>
-                                        ) : (
-                                             <>
-                                                  <Send />
-                                                  {isEdit ? 'O\'zgarishlarni Saqlash' : 'Tasdiqlash va Yaratish'}
-                                             </>
-                                        )}
+                                        {loading ? 'Saqlanmoqda...' : isEdit ? 'O\'zgarishlarni Saqlash' : 'Testni Yakunlash va Saqlash'}
+                                        <Send />
                                    </button>
                               </div>
                          </motion.div>
                     )}
                </AnimatePresence>
 
-               <p className="text-center text-slate-400 font-medium mt-16 pb-12">
-                    © 2026 Titul Test Platformasi. <span className="text-primary italic">Premium Edition</span>.
-               </p>
+               <AnimatePresence>
+                    {toast && (
+                         <motion.div
+                              initial={{ opacity: 0, y: 50, scale: 0.8 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
+                              className={`fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 rounded-[2rem] shadow-2xl z-[100] font-bold flex items-center gap-4 min-w-[320px] backdrop-blur-xl border-2 ${toast.type === "success" ? "bg-emerald-500/90 text-white border-emerald-400/50 shadow-emerald-500/20" :
+                                   toast.type === "error" ? "bg-rose-500/90 text-white border-rose-400/50 shadow-rose-500/20" :
+                                        "bg-amber-500/90 text-white border-amber-400/50 shadow-amber-500/20"
+                                   }`}
+                         >
+                              <div className="bg-white/20 p-2 rounded-xl">
+                                   {toast.type === "success" ? <CheckCircle2 size={24} /> :
+                                        toast.type === "error" ? <XCircle size={24} /> :
+                                             <AlertTriangle size={24} />}
+                              </div>
+                              <div className="flex-1">
+                                   <p className="text-xs uppercase tracking-[0.2em] opacity-70 mb-0.5">{toast.type === "success" ? "Muvaffaqiyatli" : "Ogohlantirish"}</p>
+                                   <p className="text-base leading-tight">{toast.message}</p>
+                              </div>
+                         </motion.div>
+                    )}
+               </AnimatePresence>
           </div>
      );
 }

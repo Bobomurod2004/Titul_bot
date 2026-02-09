@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_BASE_URL = os.getenv('NEXT_PUBLIC_API_URL', 'http://localhost:8000/api/v1')
+API_BASE_URL = os.getenv('BACKEND_API_URL', 'http://localhost:8000/api/v1')
 
 
 class APIClient:

@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
-import { LogIn, User, Hash, AlertCircle, ArrowRight } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { LogIn, User, Hash, AlertCircle, ArrowRight, Clock } from "lucide-react";
 import api from "@/lib/api";
 
 export default function SubmitLoginPage() {
@@ -13,13 +13,23 @@ export default function SubmitLoginPage() {
      const [code, setCode] = useState("");
      const [loading, setLoading] = useState(false);
      const [error, setError] = useState("");
+     const [test, setTest] = useState<any>(null);
 
      useEffect(() => {
-          const urlCode = searchParams.get("code") || searchParams.get("id");
-          if (urlCode) {
-               setCode(urlCode.toUpperCase());
-          }
-     }, [searchParams]);
+          const fetchTestInfo = async () => {
+               if (code.length === 8) {
+                    try {
+                         const res = await api.get(`/tests/code/${code}/`);
+                         setTest(res.data);
+                    } catch (err) {
+                         setTest(null);
+                    }
+               } else {
+                    setTest(null);
+               }
+          };
+          fetchTestInfo();
+     }, [code]);
 
      const handleEnter = async (e: React.FormEvent) => {
           e.preventDefault();
@@ -32,9 +42,10 @@ export default function SubmitLoginPage() {
           setError("");
           try {
                const response = await api.get(`/tests/code/${code}/`);
-               const test = response.data;
+               const testData = response.data;
+               setTest(testData);
 
-               if (!test.is_active) {
+               if (!testData.is_active) {
                     setError("Ushbu test yakunlangan!");
                     setLoading(false);
                     return;
@@ -42,7 +53,7 @@ export default function SubmitLoginPage() {
 
                localStorage.setItem("student_name", name);
                const userId = searchParams.get("user_id") || "0";
-               router.push(`/submit/${test.id}?user_id=${userId}`);
+               router.push(`/submit/${testData.id}?user_id=${userId}`);
           } catch (err: any) {
                setError(err.response?.status === 404 ? "Test kodi noto'g'ri!" : "Xatolik yuz berdi");
           } finally {
@@ -63,6 +74,36 @@ export default function SubmitLoginPage() {
                          </div>
                          <h1 className="text-4xl font-black font-display text-slate-900 mb-2 font-[Outfit]">Testga Kirish</h1>
                          <p className="text-slate-400 font-medium italic">Ismingiz va test kodini kiriting</p>
+                         <AnimatePresence>
+                              {test && (
+                                   <motion.div
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        className="mt-6 p-6 bg-slate-50 rounded-3xl border border-slate-100 w-full flex flex-col items-center gap-3"
+                                   >
+                                        <div className="flex flex-col items-center">
+                                             <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-1">{test.subject}</span>
+                                             <h2 className="text-xl font-black text-slate-900 text-center">{test.title}</h2>
+                                        </div>
+
+                                        <div className="w-full h-px bg-slate-200/50 my-1" />
+
+                                        <div className="flex items-center gap-2 text-amber-600 font-bold text-sm">
+                                             <Clock size={16} />
+                                             <span>
+                                                  Tugash vaqti: {test.expires_at ? new Date(test.expires_at).toLocaleString('uz-UZ', {
+                                                       hour: '2-digit',
+                                                       minute: '2-digit',
+                                                       day: '2-digit',
+                                                       month: '2-digit',
+                                                       year: 'numeric'
+                                                  }) : "Cheksiz"}
+                                             </span>
+                                        </div>
+                                   </motion.div>
+                              )}
+                         </AnimatePresence>
                     </div>
 
                     {error && (

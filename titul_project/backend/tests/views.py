@@ -66,13 +66,51 @@ class TestViewSet(viewsets.ModelViewSet):
                 logger.error(f"Test yaratishda xatolik: {str(e)}")
                 return Response({'detail': f"Server xatoligi: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        # Validation xatolarini chiroyli ko'rsatish
+        # Batafsil xatolik xabarlarini ko'rsatish
         errors = serializer.errors
         if errors:
-            # Birinchi xatoni olish
-            field, field_errors = next(iter(errors.items()))
-            error_msg = f"{field}: {field_errors[0]}"
-            return Response({'detail': f"Ma'lumotlarda xatolik - {error_msg}"}, status=status.HTTP_400_BAD_REQUEST)
+            # Xatolik xabarlarini rekursiv ravishda olish
+            def extract_error_message(error_data, parent_key=""):
+                """Nested xatoliklarni chiroyli formatda olish"""
+                if isinstance(error_data, str):
+                    return error_data
+                elif isinstance(error_data, list):
+                    # List ichidagi har bir elementni tekshirish
+                    for idx, item in enumerate(error_data):
+                        if isinstance(item, dict) and item:  # Bo'sh dict emas
+                            # Questions list uchun savol raqamini qo'shish
+                            prefix = f"{idx + 1}-savol: " if parent_key == "questions" else ""
+                            nested_msg = extract_error_message(item, "")
+                            if nested_msg and nested_msg != "Ma'lumotlarda xatolik":
+                                return prefix + nested_msg
+                        elif isinstance(item, str):
+                            return item
+                    return None
+                elif isinstance(error_data, dict):
+                    for key, value in error_data.items():
+                        nested_msg = extract_error_message(value, key)
+                        if nested_msg:
+                            # Field nomlarini o'zbekchaga tarjima qilish
+                            field_translations = {
+                                'correct_answer': "To'g'ri javob",
+                                'points': 'Ball',
+                                'question_type': 'Savol turi',
+                                'question_number': 'Savol raqami'
+                            }
+                            field_name = field_translations.get(key, key)
+                            
+                            # Agar xabar allaqachon tarjima qilingan bo'lsa
+                            if "This field may not be blank" in nested_msg:
+                                return f"{field_name} bo'sh bo'lmasligi kerak"
+                            elif "This field is required" in nested_msg:
+                                return f"{field_name} majburiy"
+                            else:
+                                return nested_msg
+                return "Ma'lumotlarda xatolik"
+
+            
+            error_msg = extract_error_message(errors)
+            return Response({'detail': error_msg}, status=status.HTTP_400_BAD_REQUEST)
             
         return Response(errors, status=status.HTTP_400_BAD_REQUEST)
     
@@ -89,6 +127,12 @@ class TestViewSet(viewsets.ModelViewSet):
         """Foydalanuvchi testlari"""
         user = get_object_or_404(User, telegram_id=telegram_id)
         tests = Test.objects.filter(creator=user).order_by('-created_at')
+        
+        # Har bir faol testni muddatini tekshirish
+        for test in tests:
+            if test.is_active:
+                test.is_expired()
+                
         serializer = self.get_serializer(tests, many=True)
         return Response(serializer.data)
     
@@ -96,52 +140,18 @@ class TestViewSet(viewsets.ModelViewSet):
     def get_by_id(self, request, pk=None):
         """ID orqali test olish"""
         test = self.get_object()
+        test.is_expired() # Muddatni tekshirish
         serializer = self.get_serializer(test)
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def finish(self, request, pk=None):
-        """Testni yakunlash va hisobot yuborish"""
+        """Testni yakunlash"""
         test = self.get_object()
         if not test.is_active:
             return Response({'error': 'Test allaqachon yakunlangan'}, status=status.HTTP_400_BAD_REQUEST)
             
         test.finish()
-        
-        # Hisobot tayyorlash va Telegramga yuborish
-        try:
-            from .utils import generate_pdf_report
-            from .notifications import send_telegram_document
-            
-            submissions = test.submissions.all().order_by('-score')
-            pdf_buffer = generate_pdf_report(test, submissions)
-            filename = f"natijalar_{test.access_code}.pdf"
-            
-            summary_msg = f"""
-🏁 <b>Test yakunlandi!</b>
-
-📝 Test: <b>{test.title}</b>
-📚 Fan: <b>{test.subject}</b>
-🔢 Kod: <b>{test.access_code}</b>
-
-📊 <b>Umumiy statistika:</b>
-👥 Ishtirokchilar: <b>{submissions.count()} ta</b>
-📈 O'rtacha ball: <b>{test.average_score} ta to'g'ri</b>
-🏆 Eng yuqori ball: <b>{test.max_score} ta to'g'ri</b>
-
-Batafsil natijalar va to'g'ri javoblar (kalit) ilova qilingan PDF faylda keltirilgan.
-"""
-            # PDF faylni yuborish
-            send_telegram_document(
-                chat_id=test.creator.telegram_id,
-                document=pdf_buffer.getvalue(),
-                filename=filename,
-                caption=summary_msg
-            )
-            
-        except Exception as e:
-            logger.error(f"Error sending final report: {e}")
-            
         return Response({'message': 'Test yakunlandi va hisobot yuborildi'}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'])

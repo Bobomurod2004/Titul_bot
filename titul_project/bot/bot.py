@@ -14,12 +14,8 @@ from telegram.ext import (
     ContextTypes
 )
 
-# Load environment variables
-from pathlib import Path
-
-# Load project root .env
-env_path = Path(__file__).resolve().parent.parent / '.env'
-load_dotenv(env_path)
+# Load local .env
+load_dotenv()
 
 # Logging
 logging.basicConfig(

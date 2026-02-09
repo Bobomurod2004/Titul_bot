@@ -111,6 +111,8 @@ def generate_pdf_report(test, submissions):
                     row.append(f"{q.question_number}. {q.correct_answer}")
             except:
                 row.append(f"{q.question_number}. {q.correct_answer}")
+        elif q.question_type == 'manual':
+            row.append(f"{q.question_number}. MANUAL")
         else:
             row.append(f"{q.question_number}. {q.correct_answer}")
             

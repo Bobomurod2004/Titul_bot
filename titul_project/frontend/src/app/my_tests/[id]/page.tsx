@@ -137,6 +137,12 @@ export default function TestDetailPage() {
                                    Yaratildi: <span className="text-slate-800">{new Date(test.created_at).toLocaleDateString()}</span>
                               </div>
                               <div className="flex items-center gap-2">
+                                   <Clock size={18} className="text-amber-500" />
+                                   Tugaydi: <span className="text-amber-600 font-black">
+                                        {test.expires_at ? new Date(test.expires_at).toLocaleString('uz-UZ', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : "Cheksiz"}
+                                   </span>
+                              </div>
+                              <div className="flex items-center gap-2">
                                    <HelpCircle size={18} className="text-primary" />
                                    Savollar: <span className="text-slate-800">{test.questions?.length || 0} ta</span>
                               </div>

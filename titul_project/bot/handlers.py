@@ -8,11 +8,8 @@ from keyboards import main_keyboard, web_app_keyboard, payment_keyboard, test_ac
 from api_client import APIClient
 from dotenv import load_dotenv
 
-from pathlib import Path
-
-# Load project root .env
-env_path = Path(__file__).resolve().parent.parent / '.env'
-load_dotenv(env_path)
+# Load local .env
+load_dotenv()
 
 FRONTEND_URL = os.getenv('NEXT_PUBLIC_SITE_URL', 'http://192.168.1.122:3000')
 

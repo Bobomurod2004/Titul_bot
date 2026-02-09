@@ -180,10 +180,18 @@ export default function MyTestsPage() {
                                                        <div className="bg-slate-50/50 p-4 rounded-3xl border border-slate-100/50">
                                                             <div className="flex items-center gap-2 text-slate-400 mb-1">
                                                                  <Clock size={14} />
-                                                                 <span className="text-[10px] font-black uppercase">Vaqt</span>
+                                                                 <span className="text-[10px] font-black uppercase">Yaratilgan</span>
                                                             </div>
                                                             <span className="text-sm font-black text-slate-700">{new Date(test.created_at).toLocaleDateString()}</span>
                                                        </div>
+                                                        <div className="bg-amber-50/50 p-4 rounded-3xl border border-amber-100/50">
+                                                             <div className="flex items-center gap-2 text-amber-600 mb-1 text-[10px] font-black uppercase">
+                                                                  <Clock size={14} /> Tugash:
+                                                             </div>
+                                                             <span className="text-[10px] font-black text-amber-700">
+                                                                  {test.expires_at ? new Date(test.expires_at).toLocaleString("uz-UZ", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "Cheksiz"}
+                                                             </span>
+                                                        </div>
                                                        <div className="bg-primary/[0.03] p-4 rounded-3xl border border-primary/5">
                                                             <div className="flex items-center gap-2 text-primary/60 mb-1">
                                                                  <Users size={14} />

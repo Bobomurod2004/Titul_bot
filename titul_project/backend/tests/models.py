@@ -44,6 +44,13 @@ class Test(models.Model):
         ('Biologiya', 'Biologiya'),
         ('Fizika', 'Fizika'),
         ('Geografiya', 'Geografiya'),
+        ('Rus tili', 'Rus tili'),
+        ('Qoraqalpoq tili', 'Qoraqalpoq tili'),
+    ]
+    
+    SUB_TYPE_CHOICES = [
+        ('tur1', '1-tur (1-40)'),
+        ('tur2', '2-tur (41-43 manual)'),
     ]
     
     MODE_CHOICES = [
@@ -55,6 +62,7 @@ class Test(models.Model):
     creator_name = models.CharField(max_length=255, null=True, blank=True)
     title = models.CharField(max_length=255)
     subject = models.CharField(max_length=50, choices=SUBJECT_CHOICES)
+    sub_type = models.CharField(max_length=10, choices=SUB_TYPE_CHOICES, null=True, blank=True)
     submission_mode = models.CharField(max_length=10, choices=MODE_CHOICES, default='single')
     access_code = models.CharField(max_length=8, unique=True, default=generate_access_code, db_index=True)
     is_active = models.BooleanField(default=True)
@@ -78,9 +86,20 @@ class Test(models.Model):
 
     def finish(self):
         """Testni yakunlash"""
+        if not self.is_active:
+            return
+            
         self.is_active = False
         self.finished_at = timezone.now()
         self.save()
+        
+        # Hisobotni Telegramga yuborish
+        try:
+            from .services import send_test_completion_report
+            send_test_completion_report(self)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error triggering auto-report: {e}")
 
     @property
     def submissions_count(self):
@@ -107,13 +126,14 @@ class Question(models.Model):
     QUESTION_TYPE_CHOICES = [
         ('choice', 'Variantli'),
         ('writing', 'Yozma'),
+        ('manual', 'Qo\'lda baholanadi'),
     ]
     
     test = models.ForeignKey(Test, on_delete=models.CASCADE, related_name='questions')
     question_number = models.IntegerField()
     question_type = models.CharField(max_length=10, choices=QUESTION_TYPE_CHOICES, default='choice')
     question_text = models.TextField(null=True, blank=True)  # Yozma savollar uchun
-    correct_answer = models.TextField()  # A/B/C/D yoki JSON (qismlar va muqobillar)
+    correct_answer = models.TextField(blank=True, null=True)  # Manual savollar uchun shart emas
     points = models.DecimalField(max_digits=5, decimal_places=2, default=1.0)
     
     class Meta:
@@ -166,11 +186,11 @@ class Submission(models.Model):
             correct_answer = question.correct_answer
             
             if question.question_type == 'choice':
-                # Variantli savollar uchun to'g'ri javobni solishtirish (A, B, C, D)
+                # Variantli savollar uchun to'g'ri javobni solishtirish (A, B, C, D yoki A, B, C, D, E, F)
                 is_correct = student_answer.strip().upper() == correct_answer.strip().upper()
                 if is_correct:
                     earned_score += question.points
-            else:
+            elif question.question_type == 'writing':
                 # Yozma savol - Qismlar (parts) va Muqobillar (alternatives) bilan
                 try:
                     import json
@@ -206,8 +226,18 @@ class Submission(models.Model):
                 
                 if is_correct:
                     earned_score += question.points
+            elif question.question_type == 'manual':
+                # Qo'lda kiritilgan ball (Kimyo/Biologiya 41-43, Ona tili 45)
+                # student_answer bu holda son bo'lishi kutiladi (ball)
+                try:
+                    score_val = Decimal(str(student_answer))
+                    earned_score += score_val
+                    is_correct = score_val > 0
+                except:
+                    is_correct = False
             
-            logger.debug(f"Q{q_num} ({question.question_type}): Student='{student_answer}', Correct='{correct_answer[:50]}...' -> {'OK' if is_correct else 'WRONG'}")
+            correct_display = str(correct_answer)[:50] if correct_answer else "N/A"
+            logger.debug(f"Q{q_num} ({question.question_type}): Student='{student_answer}', Correct='{correct_display}...' -> {'OK' if is_correct else 'WRONG'}")
         
         logger.info(f"Submission {self.id} score: {earned_score}/{total_possible_score}")
         

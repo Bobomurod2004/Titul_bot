@@ -14,11 +14,11 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv(Path(__file__).resolve().parent.parent.parent / '.env')
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -163,6 +163,7 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG  # Dev rejimida barcha originlarga ruxsat berish
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://192.168.137.58:3000",
     "http://192.168.1.122:3000",
     "https://rashtestibot-production.up.railway.app",
 ]

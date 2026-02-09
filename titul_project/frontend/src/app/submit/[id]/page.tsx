@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Clock, User, CheckCircle2, BookOpen, Trophy, Keyboard } from "lucide-react";
+import { Send, Clock, User, CheckCircle2, BookOpen, Trophy, Keyboard, Star } from "lucide-react";
 import api from "@/lib/api";
 import ScientificKeyboard from "@/components/ScientificKeyboard";
 
@@ -34,6 +34,12 @@ export default function SubmitTestPage() {
           sub.includes("physics");
      const hasWritingQuestions = test?.questions?.some((q: any) => q.question_type === "writing");
 
+     const [isMobile, setIsMobile] = useState(false);
+
+     useEffect(() => {
+          setIsMobile(window.innerWidth < 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+     }, []);
+
      useEffect(() => {
           const name = localStorage.getItem("student_name");
           if (!name) {
@@ -49,14 +55,16 @@ export default function SubmitTestPage() {
 
                     const initialAnswers = response.data.questions.map((q: any) => {
                          let initialVal: any = "";
-                         if (q.question_type === 'writing') {
+                         if (q.question_type === 'writing' || q.question_type === 'manual') {
                               try {
-                                   const parsed = JSON.parse(q.correct_answer);
-                                   if (Array.isArray(parsed)) {
+                                   const parsed = q.correct_answer ? JSON.parse(q.correct_answer) : [];
+                                   if (Array.isArray(parsed) && parsed.length > 0) {
                                         initialVal = Array(parsed.length).fill("");
+                                   } else {
+                                        initialVal = [""]; // Default to 1 part if empty or not array
                                    }
                               } catch {
-                                   initialVal = "";
+                                   initialVal = [""]; // Default to 1 part for writing/manual
                               }
                          }
                          return {
@@ -147,7 +155,9 @@ export default function SubmitTestPage() {
      };
 
      const handleSubmit = async () => {
-          const unanswered = answers.filter(a => {
+          const unanswered = answers.filter((a, idx) => {
+               const q = test.questions[idx];
+               if (q.question_type === 'manual') return false;
                if (Array.isArray(a.student_answer)) return a.student_answer.some((v: any) => v === "");
                return a.student_answer === "";
           }).length;
@@ -224,8 +234,8 @@ export default function SubmitTestPage() {
                               </div>
                          )}
                          <div className="flex justify-between items-center">
-                              <span className="text-slate-400 font-bold uppercase text-xs tracking-widest">To'g'ri javoblar:</span>
-                              <span className="text-3xl font-black text-primary font-display">{result.score} ta</span>
+                              <span className="text-slate-400 font-bold uppercase text-xs tracking-widest">Umumiy ball:</span>
+                              <span className="text-3xl font-black text-primary font-display">{result.score} ball</span>
                          </div>
                          <div className="flex justify-between items-center pt-4 border-t border-slate-200">
                               <span className="text-slate-400 font-bold uppercase text-xs tracking-widest">Daraja:</span>
@@ -248,23 +258,28 @@ export default function SubmitTestPage() {
      );
 
      return (
-          <div className="max-w-5xl mx-auto px-4 py-12 md:py-20">
+          <div className="max-w-5xl mx-auto px-4 py-8 md:py-20 lg:py-24">
                {/* Exam Header */}
                <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="titul-card mb-12 border-l-[12px] border-primary flex flex-col md:flex-row items-center justify-between gap-8"
+                    className="titul-card mb-8 md:mb-12 border-l-[12px] border-primary flex flex-col md:flex-row items-center justify-between gap-6 md:gap-8"
                >
-                    <div className="flex items-center gap-6 text-center md:text-left">
-                         <div className="w-20 h-20 bg-primary/10 rounded-3xl flex items-center justify-center text-primary shrink-0 mx-auto">
-                              <BookOpen size={36} />
+                    <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 text-center sm:text-left">
+                         <div className="w-16 h-16 md:w-20 md:h-20 bg-primary/10 rounded-2xl md:rounded-3xl flex items-center justify-center text-primary shrink-0">
+                              <BookOpen size={window?.innerWidth < 768 ? 28 : 36} />
                          </div>
                          <div>
-                              <h1 className="text-3xl font-black font-display text-slate-900 leading-tight mb-2">{test.title}</h1>
-                              <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 text-slate-400 font-bold text-sm uppercase tracking-wider">
+                              <h1 className="text-2xl md:text-3xl font-black font-display text-slate-900 leading-tight mb-2">{test.title}</h1>
+                              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 md:gap-4 text-slate-400 font-bold text-xs md:text-sm uppercase tracking-wider">
                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-lg">
                                         <Clock size={16} className="text-primary" /> {test.subject}
                                    </div>
+                                   {test.expires_at && (
+                                        <div className="flex items-center gap-2 bg-amber-50 text-amber-600 px-3 py-1 rounded-lg border border-amber-100">
+                                             <Clock size={16} /> Tugash: {new Date(test.expires_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                   )}
                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-lg">
                                         <User size={16} className="text-primary" /> {studentName}
                                    </div>
@@ -272,9 +287,9 @@ export default function SubmitTestPage() {
                          </div>
                     </div>
 
-                    <div className="bg-slate-900 text-white px-8 py-4 rounded-3xl text-center md:text-right shrink-0">
+                    <div className="bg-slate-900 text-white px-6 md:px-8 py-3 md:py-4 rounded-2xl md:rounded-3xl text-center md:text-right shrink-0 w-full md:w-auto">
                          <p className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] mb-1">Test Kodi</p>
-                         <p className="text-3xl font-black font-display tracking-widest">{test.access_code}</p>
+                         <p className="text-2xl md:text-3xl font-black font-display tracking-widest">{test.access_code}</p>
                     </div>
                </motion.div>
 
@@ -283,20 +298,20 @@ export default function SubmitTestPage() {
                     <motion.div
                          initial={{ opacity: 0, scale: 0.95 }}
                          animate={{ opacity: 1, scale: 1 }}
-                         className="mb-8 p-4 bg-primary/5 border-2 border-primary/10 rounded-[2rem] flex items-center justify-between gap-4"
+                         className="mb-8 p-4 bg-primary/5 border-2 border-primary/10 rounded-2xl md:rounded-[2rem] flex flex-col sm:flex-row items-center justify-between gap-4"
                     >
-                         <div className="flex items-center gap-4 ml-2">
-                              <div className="w-10 h-10 bg-primary shadow-lg shadow-primary/20 rounded-xl flex items-center justify-center text-white">
+                         <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 bg-primary shadow-lg shadow-primary/20 rounded-xl flex items-center justify-center text-white shrink-0">
                                    <Keyboard size={20} />
                               </div>
-                              <div>
+                              <div className="text-center sm:text-left">
                                    <p className="text-sm font-black text-slate-800 uppercase tracking-widest">Formula Paneli</p>
-                                   <p className="text-xs text-slate-400 font-bold">Maxsus belgi va formulalar uchun klaviatura</p>
+                                   <p className="text-[10px] md:text-xs text-slate-400 font-bold">Maxsus belgi va formulalar uchun klaviatura</p>
                               </div>
                          </div>
                          <button
                               onClick={() => setKeyboardVisible(!keyboardVisible)}
-                              className={`px-6 py-2 rounded-xl font-bold text-sm transition-all shadow-sm ${keyboardVisible ? 'bg-slate-900 text-white shadow-slate-200' : 'bg-white text-primary border-2 border-primary/20 hover:border-primary'
+                              className={`w-full sm:w-auto px-6 py-2 rounded-xl font-bold text-sm transition-all shadow-sm ${keyboardVisible ? 'bg-slate-900 text-white shadow-slate-200' : 'bg-white text-primary border-2 border-primary/20 hover:border-primary'
                                    }`}
                          >
                               {keyboardVisible ? 'Yopish' : 'Klaviaturani Ochish'}
@@ -305,19 +320,23 @@ export default function SubmitTestPage() {
                )}
 
                {/* Questions Grid */}
-               <div className="space-y-4 mb-20">
-                    <div className="flex items-center gap-6 mb-8 ml-2">
-                         <h2 className="text-2xl font-black font-display text-slate-800">Javoblar Varog'i</h2>
+               <div className={`space-y-6 transition-all duration-300 ${keyboardVisible ? 'mb-[450px]' : 'mb-24'}`}>
+                    <div className="flex items-center gap-4 md:gap-6 mb-6 md:mb-8 ml-2">
+                         <h2 className="text-xl md:text-2xl font-black font-display text-slate-800 shrink-0">Javoblar Varog'i</h2>
                          <div className="h-[2px] flex-grow bg-slate-100 rounded-full"></div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6">
                          {test.questions.map((q: any, idx: number) => {
                               const isWriting = q.question_type === "writing";
+                              const isManual = q.question_type === "manual";
                               const studentAns = answers[idx]?.student_answer;
                               const isAnswered = isWriting
                                    ? (Array.isArray(studentAns) ? studentAns.some((v: any) => v !== "") : !!studentAns)
-                                   : !!studentAns;
+                                   : (isManual ? true : !!studentAns);
+
+                              const isAF = (q.question_number >= 33 && q.question_number <= 35);
+                              const variants = isAF ? ["A", "B", "C", "D", "E", "F"] : ["A", "B", "C", "D"];
 
                               return (
                                    <motion.div
@@ -325,88 +344,105 @@ export default function SubmitTestPage() {
                                         initial={{ opacity: 0, x: -10 }}
                                         animate={{ opacity: 1, x: 0 }}
                                         transition={{ delay: idx * 0.01 }}
-                                        className={`question-row !py-6 transition-all ${isWriting ? 'flex-col !items-start gap-6 bg-slate-50/30' : ''} ${isAnswered ? 'active' : ''}`}
+                                        className={`question-row !p-4 md:!p-6 transition-all flex flex-col gap-4 ${isAnswered ? 'active' : ''}`}
                                    >
-                                        <div className="flex items-center gap-5 w-full">
-                                             <div className="w-12 h-12 bg-white border-2 border-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 text-lg shadow-sm">
-                                                  {q.question_number}
+                                        <div className="flex items-center justify-between w-full">
+                                             <div className="flex items-center gap-3">
+                                                  <div className="w-10 h-10 bg-white border-2 border-slate-100 rounded-xl flex items-center justify-center font-black text-slate-400 text-base shadow-sm">
+                                                       {q.question_number}
+                                                  </div>
+                                                  {isWriting && (
+                                                       <span className="font-black text-slate-500 uppercase tracking-widest text-[9px] bg-slate-100 px-2 py-1 rounded-md">Yozma Javob</span>
+                                                  )}
+                                                  {isManual && (
+                                                       <div className="flex items-center gap-1.5 bg-secondary/10 px-2 py-1 rounded-md">
+                                                            <Star size={12} className="text-secondary" />
+                                                            <span className="font-black text-secondary uppercase tracking-widest text-[9px]">MAX: {q.points}</span>
+                                                       </div>
+                                                  )}
                                              </div>
-                                             {isWriting && (
-                                                  <span className="font-black text-slate-500 uppercase tracking-widest text-[10px]">Yozma Javob</span>
+                                             {isAnswered && !isWriting && !isManual && (
+                                                  <div className="bg-primary/10 text-primary px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest">
+                                                       Belgilandi: {answers[idx]?.student_answer}
+                                                  </div>
                                              )}
                                         </div>
 
-                                        <div className="flex gap-2 sm:gap-4 flex-grow justify-end w-full">
+                                        <div className="flex items-center justify-center w-full">
                                              {q.question_type === "choice" ? (
-                                                  ["A", "B", "C", "D"].map((choice) => (
-                                                       <div
-                                                            key={choice}
-                                                            onClick={() => handleChoice(idx, choice)}
-                                                            className={`circle-check !w-14 !h-14 !text-xl ${answers[idx]?.student_answer === choice ? 'active' : ''}`}
-                                                       >
-                                                            {choice}
-                                                       </div>
-                                                  ))
+                                                  <div className="grid grid-cols-4 sm:flex sm:flex-wrap gap-2 md:gap-3 justify-center w-full">
+                                                       {variants.map((choice) => (
+                                                            <div
+                                                                 key={choice}
+                                                                 onClick={() => handleChoice(idx, choice)}
+                                                                 className={`circle-check !w-10 !h-10 sm:!w-12 sm:!h-12 !text-base sm:!text-lg ${answers[idx]?.student_answer === choice ? 'active' : ''}`}
+                                                            >
+                                                                 {choice}
+                                                            </div>
+                                                       ))}
+                                                  </div>
                                              ) : (
                                                   <div className="w-full space-y-3">
                                                        {Array.isArray(answers[idx]?.student_answer) ? (
                                                             answers[idx].student_answer.map((partVal: string, pIdx: number) => (
-                                                                 <div key={pIdx} className="relative group/input">
-                                                                      <div className="absolute left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-[10px] font-black text-slate-400">
+                                                                 <div key={pIdx} className="relative group/input w-full">
+                                                                      <div className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 w-7 h-7 md:w-8 md:h-8 bg-slate-100 rounded-lg flex items-center justify-center text-[9px] md:text-[10px] font-black text-slate-400">
                                                                            {pIdx + 1}
                                                                       </div>
                                                                       <input
                                                                            ref={el => { if (el) inputRefs.current[`${idx}-${pIdx}`] = el; }}
                                                                            type="text"
+                                                                           inputMode={isScientificSubject && isMobile ? "none" : "text"}
                                                                            placeholder="Javobingiz..."
-                                                                           className="input-premium !py-4 !pl-16 !pr-12 !rounded-[1.25rem] !text-lg !bg-white"
+                                                                           className="input-premium !py-3 md:!py-4 !pl-12 md:!pl-16 !pr-10 md:!pr-12 !rounded-xl md:!rounded-[1.25rem] !text-base md:!text-lg !bg-white"
                                                                            value={partVal}
                                                                            onFocus={() => {
                                                                                 setFocusedInput({ qIndex: idx, pIndex: pIdx });
-                                                                                if (isScientificSubject) {
+                                                                                if (isScientificSubject && isMobile) {
                                                                                      setKeyboardVisible(true);
                                                                                 }
                                                                            }}
                                                                            onChange={(e) => handleWritingChange(idx, pIdx, e.target.value)}
                                                                       />
-                                                                      {isWriting && (
+                                                                      {(isWriting || isManual) && (
                                                                            <button
                                                                                 onClick={() => {
                                                                                      setFocusedInput({ qIndex: idx, pIndex: pIdx });
                                                                                      setKeyboardVisible(true);
                                                                                 }}
-                                                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-primary transition-colors"
+                                                                                className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-primary transition-colors"
                                                                            >
-                                                                                <Keyboard size={20} />
+                                                                                <Keyboard size={18} />
                                                                            </button>
                                                                       )}
                                                                  </div>
                                                             ))
                                                        ) : (
-                                                            <div className="relative">
+                                                            <div className="relative w-full">
                                                                  <input
                                                                       ref={el => { if (el) inputRefs.current[`${idx}-0`] = el; }}
                                                                       type="text"
+                                                                      inputMode={isScientificSubject && isMobile ? "none" : "text"}
                                                                       placeholder="Javobingiz..."
-                                                                      className="input-premium !py-4 !px-6 !rounded-[1.25rem] !text-lg !bg-white"
+                                                                      className="input-premium !py-3 md:!py-4 !px-4 md:!px-6 !rounded-xl md:!rounded-[1.25rem] !text-base md:!text-lg !bg-white"
                                                                       value={answers[idx]?.student_answer}
                                                                       onFocus={() => {
                                                                            setFocusedInput({ qIndex: idx, pIndex: 0 });
-                                                                           if (isScientificSubject) {
+                                                                           if (isScientificSubject && isMobile) {
                                                                                 setKeyboardVisible(true);
                                                                            }
                                                                       }}
                                                                       onChange={(e) => handleChoice(idx, e.target.value)}
                                                                  />
-                                                                 {isWriting && (
+                                                                 {(isWriting || isManual) && (
                                                                       <button
                                                                            onClick={() => {
                                                                                 setFocusedInput({ qIndex: idx, pIndex: 0 });
                                                                                 setKeyboardVisible(true);
                                                                            }}
-                                                                           className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-primary transition-colors"
+                                                                           className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-primary transition-colors"
                                                                       >
-                                                                           <Keyboard size={20} />
+                                                                           <Keyboard size={18} />
                                                                       </button>
                                                                  )}
                                                             </div>
@@ -421,24 +457,26 @@ export default function SubmitTestPage() {
                </div>
 
                {/* Sticky Footer Action */}
-               <div className="sticky bottom-8 left-0 right-0 px-4 z-40">
-                    <button
-                         onClick={handleSubmit}
-                         disabled={submitting}
-                         className={`btn-primary w-full py-6 text-2xl group shadow-[0_20px_40px_rgba(79,70,229,0.3)] ${submitting ? 'opacity-70' : ''}`}
-                    >
-                         {submitting ? (
-                              <div className="flex items-center gap-3">
-                                   <div className="w-6 h-6 border-4 border-white border-t-transparent animate-spin rounded-full"></div>
-                                   Yuborilmoqda...
-                              </div>
-                         ) : (
-                              <>
-                                   <Send size={28} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-                                   Javoblarni Tasdiqlash va Yuborish
-                              </>
-                         )}
-                    </button>
+               <div className="fixed bottom-0 left-0 right-0 p-4 md:p-6 bg-gradient-to-t from-slate-50 via-slate-50 to-transparent z-40">
+                    <div className="max-w-5xl mx-auto">
+                         <button
+                              onClick={handleSubmit}
+                              disabled={submitting}
+                              className={`btn-primary w-full py-4 md:py-6 text-xl md:text-2xl group shadow-titul active:scale-[0.98] ${submitting ? 'opacity-70' : ''}`}
+                         >
+                              {submitting ? (
+                                   <div className="flex items-center gap-3">
+                                        <div className="w-6 h-6 border-4 border-white border-t-transparent animate-spin rounded-full"></div>
+                                        Yuborilmoqda...
+                                   </div>
+                              ) : (
+                                   <>
+                                        <Send size={window?.innerWidth < 768 ? 24 : 28} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                                        Javoblarni Yuborish
+                                   </>
+                              )}
+                         </button>
+                    </div>
                </div>
 
                {/* Scientific Keyboard Integration */}
@@ -453,8 +491,8 @@ export default function SubmitTestPage() {
                     )}
                </AnimatePresence>
 
-               <p className="text-center text-slate-400 font-medium mt-12 pb-8">
-                    © 2026 Titul Test Platformasi • <span className="text-secondary">Xavfsiz va Ishonchli</span>
+               <p className="text-center text-slate-400 font-medium mt-12 pb-24">
+                    © 2026 Titul Test Platformasi • <span className="text-secondary tracking-wide">IShonchli Tizim</span>
                </p>
           </div>
      );
