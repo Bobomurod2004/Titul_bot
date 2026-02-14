@@ -1,6 +1,7 @@
 import os
 import requests
 import logging
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -8,9 +9,9 @@ def send_telegram_notification(chat_id, text):
     """
     Telegram bot orqali xabar yuborish
     """
-    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    token = settings.TELEGRAM_BOT_TOKEN
     if not token:
-        logger.error("TELEGRAM_BOT_TOKEN topilmadi!")
+        logger.error("TELEGRAM_BOT_TOKEN sozlamalarda topilmadi!")
         return False
     
     url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -32,9 +33,9 @@ def send_telegram_document(chat_id, document, filename, caption=None):
     """
     Telegram bot orqali hujjat yuborish
     """
-    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    token = settings.TELEGRAM_BOT_TOKEN
     if not token:
-        logger.error("TELEGRAM_BOT_TOKEN topilmadi!")
+        logger.error("TELEGRAM_BOT_TOKEN sozlamalarda topilmadi!")
         return False
     
     url = f"https://api.telegram.org/bot{token}/sendDocument"

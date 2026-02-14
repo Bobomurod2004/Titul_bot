@@ -9,7 +9,9 @@ reportlab==4.0.9
 celery==5.3.6
 redis==5.0.1
 requests==2.31.0
+gunicorn==21.2.0
 
 # Telegram Bot requirements
 python-telegram-bot==20.7
 aiohttp==3.9.1
+httpx==0.26.0

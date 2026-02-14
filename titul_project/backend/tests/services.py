@@ -22,9 +22,8 @@ def send_test_completion_report(test):
 🔢 Kod: <b>{test.access_code}</b>
 
 📊 <b>Umumiy statistika:</b>
-👥 Ishtirokchilar: <b>{submissions.count()} ta</b>
-📈 O'rtacha ball: <b>{test.average_score} ta to'g'ri</b>
-🏆 Eng yuqori ball: <b>{test.max_score} ta to'g'ri</b>
+👥 Ishtirokchilar: <b>{test.submissions_count} ta</b>
+📈 O'rtacha natija: <b>{test.average_score}</b>
 
 Batafsil natijalar va to'g'ri javoblar (kalit) ilova qilingan PDF faylda keltirilgan.
 """
@@ -42,4 +41,24 @@ Batafsil natijalar va to'g'ri javoblar (kalit) ilova qilingan PDF faylda keltiri
         return success
     except Exception as e:
         logger.error(f"Error sending final report for test {test.access_code}: {e}")
+        return False
+
+def send_preliminary_finish_notification(test):
+    """
+    Test yakunlangani haqida darhol xabar yuborish (hisob-kitob boshlanishidan oldin)
+    """
+    try:
+        from .notifications import send_telegram_notification
+        msg = f"""
+⏳ <b>Test yakunlandi!</b>
+
+📝 Test: <b>{test.title}</b>
+📊 <b>Natijalar tayyorlanmoqda...</b>
+
+Rasch modeli bo'yicha hisob-kitoblar va PDF hisobot bir necha soniyadan so'ng yuboriladi. Iltimos, kutib turing.
+"""
+        send_telegram_notification(test.creator.telegram_id, msg)
+        return True
+    except Exception as e:
+        logger.error(f"Error sending prelim notification: {e}")
         return False

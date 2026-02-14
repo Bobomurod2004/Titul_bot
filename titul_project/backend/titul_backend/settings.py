@@ -170,6 +170,31 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "x-telegram-id",  # Maxsus headerga ruxsat berish
+]
+
+CORS_EXPOSE_HEADERS = ["x-telegram-id"]
+
+
+# Celery settings
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/1')
+CELERY_BEAT_SCHEDULE = {
+    'check-expired-tests-every-minute': {
+        'task': 'tests.tasks.check_expired_tests_task',
+        'schedule': 60.0,
+    },
+}
 
 # Telegram Bot settings
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')

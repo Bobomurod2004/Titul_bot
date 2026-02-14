@@ -20,6 +20,24 @@ body {
   color: #1e293b;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  /* "Tayoqcha" (kursor) hamma joyda chiqmasligi uchun: */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Faqat matn yoziladigan joylarda kursorni qaytaramiz */
+input, 
+textarea, 
+[contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Tugma va bosiladigan elementlarda kursor "qo'lcha" bo'lishi kerak */
+button, 
+a, 
+.cursor-pointer {
+  cursor: pointer;
 }
 
 h1,

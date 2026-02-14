@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, Test, Question, Submission, Payment, Announcement
+from .models import User, Test, Question, Submission, Payment, Announcement, PaymentReceipt, BroadcastHistory
 
 
 @admin.register(User)
@@ -59,3 +59,24 @@ class AnnouncementAdmin(admin.ModelAdmin):
     list_filter = ['type', 'is_active', 'created_at']
     search_fields = ['title', 'content']
     list_editable = ['is_active', 'order']
+
+@admin.register(PaymentReceipt)
+class PaymentReceiptAdmin(admin.ModelAdmin):
+    list_display = ['id', 'user', 'amount', 'status', 'created_at', 'verified_at', 'verified_by']
+    list_filter = ['status', 'created_at', 'verified_at']
+    search_fields = ['user__full_name', 'user__telegram_id', 'admin_comment']
+    readonly_fields = ['created_at', 'verified_at']
+    
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('user', 'verified_by')
+
+
+@admin.register(BroadcastHistory)
+class BroadcastHistoryAdmin(admin.ModelAdmin):
+    list_display = ['id', 'admin', 'total_users', 'success_count', 'fail_count', 'status', 'created_at']
+    list_filter = ['status', 'created_at']
+    search_fields = ['message', 'admin__full_name']
+    readonly_fields = ['created_at', 'completed_at']
+    
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('admin')

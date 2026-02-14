@@ -1,9 +1,9 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, serializers, views
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse, FileResponse
-from .models import User, Test, Question, Submission, Payment, Announcement
+from .models import User, Test, Question, Submission, Payment, Announcement, ActivityLog
 from .serializers import (
     UserSerializer, TestSerializer, QuestionSerializer,
     SubmissionSerializer, PaymentSerializer,
@@ -11,6 +11,7 @@ from .serializers import (
     AnnouncementSerializer
 )
 from .utils import generate_pdf_report
+from .rasch_service import calibrate_test_items, calculate_rasch_scores
 import logging
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,14 @@ class UserViewSet(viewsets.ModelViewSet):
             }
         )
         
+        if created:
+            ActivityLog.objects.create(
+                event_type='user_registered',
+                user=user,
+                description=f"Yangi foydalanuvchi ro'yxatdan o'tdi: {user.full_name}",
+                metadata={'telegram_id': user.telegram_id, 'role': user.role}
+            )
+        
         serializer = self.get_serializer(user)
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
@@ -58,10 +67,19 @@ class TestViewSet(viewsets.ModelViewSet):
         if serializer.is_valid():
             try:
                 test = serializer.save()
+                ActivityLog.objects.create(
+                    event_type='test_created',
+                    user=test.creator,
+                    description=f"Yangi test yaratildi: {test.title} ({test.access_code})",
+                    metadata={'test_id': test.id, 'access_code': test.access_code}
+                )
                 return Response(
                     TestSerializer(test).data,
                     status=status.HTTP_201_CREATED
                 )
+            except serializers.ValidationError as e:
+                # Serializer ichidagi ValidationError holatini ushlash (masalan, balans yetarli emasligi)
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
             except Exception as e:
                 logger.error(f"Test yaratishda xatolik: {str(e)}")
                 return Response({'detail': f"Server xatoligi: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -125,6 +143,9 @@ class TestViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='user/(?P<telegram_id>[^/.]+)')
     def user_tests(self, request, telegram_id=None):
         """Foydalanuvchi testlari"""
+        if not str(telegram_id).isdigit():
+            return Response({'error': 'Telegram ID raqam bo\'lishi kerak'}, status=status.HTTP_400_BAD_REQUEST)
+            
         user = get_object_or_404(User, telegram_id=telegram_id)
         tests = Test.objects.filter(creator=user).order_by('-created_at')
         
@@ -143,6 +164,50 @@ class TestViewSet(viewsets.ModelViewSet):
         test.is_expired() # Muddatni tekshirish
         serializer = self.get_serializer(test)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='check_status/(?P<telegram_id>[^/.]+)')
+    def check_attempt_status(self, request, pk=None, telegram_id=None):
+        """Talaba ushbu testni topshirganmi yoki yo'q tekshirish"""
+        test = self.get_object()
+        
+        # Telegram ID raqam ekanligini tekshirish (500 xatolikni oldini olish uchun)
+        if not str(telegram_id).isdigit():
+            # Agar ID raqam bo'lmasa (masalan, kutilmaganda test kodi kelib qolsa)
+            # Biz buni "yangi urinish" sifatida ko'rsatamiz (yoki 400 qaytaramiz)
+            # Frontend kodi noto'g'ri bo'lganda bu xatolikni oldini oladi
+            return Response({
+                'can_submit': True,
+                'existing_attempts_count': 0,
+                'submission_mode': test.submission_mode,
+                'is_active': test.is_active,
+                'is_expired': test.is_expired(),
+                'warning': 'Invalid Telegram ID format'
+            })
+
+        student_name = request.query_params.get('student_name', '').strip()
+        query = test.submissions.filter(student_telegram_id=telegram_id)
+        if str(telegram_id) == '0' and student_name:
+            query = query.filter(student_name__iexact=student_name)
+            
+        submissions = query.order_by('attempt_number')
+        
+        can_submit = True
+        if test.submission_mode == 'single':
+            if str(telegram_id) != '0':
+                if submissions.exists():
+                    can_submit = False
+            elif student_name:
+                # Veb foydalanuvchisi uchun (ID=0) ism bo'yicha tekshirish
+                if test.submissions.filter(student_name__iexact=student_name).exists():
+                    can_submit = False
+            
+        return Response({
+            'can_submit': can_submit,
+            'existing_attempts_count': submissions.count(),
+            'submission_mode': test.submission_mode,
+            'is_active': test.is_active,
+            'is_expired': test.is_expired()
+        })
     
     @action(detail=True, methods=['post'])
     def finish(self, request, pk=None):
@@ -152,7 +217,53 @@ class TestViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Test allaqachon yakunlangan'}, status=status.HTTP_400_BAD_REQUEST)
             
         test.finish()
-        return Response({'message': 'Test yakunlandi va hisobot yuborildi'}, status=status.HTTP_200_OK)
+        ActivityLog.objects.create(
+            event_type='test_finished',
+            user=test.creator,
+            description=f"Test yakunlandi: {test.title} ({test.access_code})",
+            metadata={'test_id': test.id, 'access_code': test.access_code}
+        )
+        # Test yakunlanganda avtomatik Rasch kalibratsiyasini boshlash
+        try:
+            calibrate_test_items(test)
+            calculate_rasch_scores(test)
+        except Exception as e:
+            logger.error(f"Rasch calibration error after finish: {e}")
+            
+        return Response({'message': 'Test yakunlandi, hisobot yuborildi va Rasch modeli bo\'yicha hisoblandi'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def calibrate(self, request, pk=None):
+        """Testni qo'lda kalibratsiya qilish va ballarni qayta hisoblash"""
+        test = self.get_object()
+        try:
+            if calibrate_test_items(test):
+                calculate_rasch_scores(test)
+                return Response({'message': 'Test muvaffaqiyatli kalibratsiya qilindi va natijalar yangilandi'})
+            return Response({'error': 'Kalibratsiya uchun yetarli ma\'lumot mavjud emas'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Manual calibration error: {e}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['get'])
+    def results(self, request, pk=None):
+        """Test natijalari (submissions)"""
+        test = self.get_object()
+        submissions = Submission.objects.filter(test=test).order_by('-score')
+        serializer = SubmissionSerializer(submissions, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def send_report(self, request, pk=None):
+        """Hisobotni bot orqali qayta yuborish"""
+        test = self.get_object()
+        try:
+            from .tasks import process_test_results_task
+            process_test_results_task.delay(test.id)
+            return Response({'message': 'Hisobot yuborish jarayoni boshlandi'})
+        except Exception as e:
+            logger.error(f"Manual send_report error: {e}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['get'])
     def report(self, request, pk=None):
@@ -239,11 +350,36 @@ class PaymentViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'], url_path='user/(?P<telegram_id>[^/.]+)')
     def user_payments(self, request, telegram_id=None):
-        """Foydalanuvchi to'lovlari"""
+        """Foydalanuvchi to'lovlari (Online + Manual)"""
         user = get_object_or_404(User, telegram_id=telegram_id)
-        payments = Payment.objects.filter(user=user).order_by('-created_at')
-        serializer = self.get_serializer(payments, many=True)
-        return Response(serializer.data)
+        
+        # 1. Online to'lovlar (Payment modeli)
+        online_payments = Payment.objects.filter(user=user).order_by('-created_at')
+        online_data = PaymentSerializer(online_payments, many=True).data
+        for item in online_data:
+            item['type'] = 'online'
+            item['timestamp'] = item['created_at']
+
+        # 2. Manual to'lovlar (PaymentReceipt modeli - faqat tasdiqlanganlar)
+        from .models import PaymentReceipt
+        from .serializers import PaymentReceiptSerializer
+        manual_receipts = PaymentReceipt.objects.filter(user=user).order_by('-created_at')
+        manual_data = PaymentReceiptSerializer(manual_receipts, many=True).data
+        for item in manual_data:
+            item['type'] = 'manual'
+            item['timestamp'] = item['created_at']
+            # Payment modeliga moslashtirish (Bot UI uchun)
+            if 'receipt_image' in item:
+                item['payment_method'] = 'Chek orqali'
+
+        # Hammasini birlashtirish va vaqt bo'yicha tartiblash
+        combined_history = sorted(
+            online_data + manual_data, 
+            key=lambda x: x['timestamp'], 
+            reverse=True
+        )
+        
+        return Response(combined_history)
     
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
@@ -263,3 +399,12 @@ class AnnouncementViewSet(viewsets.ReadOnlyModelViewSet):
 def health_check(request):
     """Health check endpoint"""
     return Response({'status': 'ok', 'message': 'Titul Test Bot API is running'})
+
+class PublicStatsView(views.APIView):
+    """Barcha uchun ochiq statistika (Landing page uchun)"""
+    def get(self, request):
+        return Response({
+            'total_users': User.objects.count(), 
+            'total_tests': Test.objects.count(),
+            'total_submissions': Submission.objects.count(),
+        })

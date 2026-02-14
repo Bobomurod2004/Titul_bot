@@ -37,6 +37,15 @@ from handlers import (
     button_handler,
     text_handler
 )
+from admin_handlers import (
+    admin_panel_handler,
+    admin_stats_handler,
+    admin_back_handler,
+    admin_broadcast_handler,
+    admin_user_search_handler,
+    handle_admin_text,
+    admin_callback_handler
+)
 
 
 def main():
@@ -60,10 +69,26 @@ def main():
     application.add_handler(MessageHandler(filters.Regex("^💳 To'lov qilish$"), payment_handler))
     application.add_handler(MessageHandler(filters.Regex("^ℹ️ Foydalanish yo'riqnomasi$"), help_handler))
     
+    # Admin handlers
+    application.add_handler(MessageHandler(filters.Regex("^🔐 Admin Panel$"), admin_panel_handler))
+    application.add_handler(MessageHandler(filters.Regex("^📊 Tizim statistikasi$"), admin_stats_handler))
+    application.add_handler(MessageHandler(filters.Regex("^👥 Foydalanuvchilarni izlash$"), admin_user_search_handler))
+    application.add_handler(MessageHandler(filters.Regex("^📢 Xabar yuborish$"), admin_broadcast_handler))
+    application.add_handler(MessageHandler(filters.Regex("^🔙 Orqaga$"), admin_back_handler))
+    
+    # Admin text handler should be before general text_handler
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_admin_text))
+    
     # Callback query handler
+    from handlers import check_subscription_callback
+    application.add_handler(CallbackQueryHandler(admin_callback_handler, pattern='^adm_|^set_role_|^rec_'))
+    application.add_handler(CallbackQueryHandler(check_subscription_callback, pattern='^check_subscription$'))
     application.add_handler(CallbackQueryHandler(button_handler))
     
     # Text message handler (general)
+    from handlers import handle_receipt_photo, handle_receipt_document
+    application.add_handler(MessageHandler(filters.PHOTO, handle_receipt_photo))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_receipt_document))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), text_handler))
     
     # Bot ishga tushirish
