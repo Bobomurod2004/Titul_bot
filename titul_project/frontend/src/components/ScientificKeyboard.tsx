@@ -2,7 +2,7 @@
 
 import React, { useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Delete, Command, CornerDownLeft, Hash, FunctionSquare, Layout } from 'lucide-react';
+import { X, Delete, CornerDownLeft, Hash, FunctionSquare, Layout } from 'lucide-react';
 
 interface ScientificKeyboardProps {
      onInsert: (char: string) => void;

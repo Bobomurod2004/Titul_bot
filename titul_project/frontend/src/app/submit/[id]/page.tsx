@@ -16,7 +16,7 @@ export default function SubmitLoginPage() {
      const [code, setCode] = useState("");
      const [loading, setLoading] = useState(false);
      const [error, setError] = useState("");
-     const [test, setTest] = useState<any>(null);
+     const [test, setTest] = useState<{ id: number; title: string; subject: string; is_active: boolean; expires_at?: string } | null>(null);
 
      useEffect(() => {
           const urlCode = searchParams.get("code") || searchParams.get("id");
@@ -62,8 +62,9 @@ export default function SubmitLoginPage() {
 
                localStorage.setItem("student_name", name);
                router.push(`/submit/${testData.id}/${userId}`);
-          } catch (err: any) {
-               setError(err.response?.status === 404 ? "Test kodi noto'g'ri!" : "Xatolik yuz berdi");
+          } catch (err: unknown) {
+               const error = err as { response?: { status?: number } };
+               setError(error.response?.status === 404 ? "Test kodi noto'g'ri!" : "Xatolik yuz berdi");
           } finally {
                setLoading(false);
           }
@@ -175,7 +176,7 @@ export default function SubmitLoginPage() {
                          <ul className="space-y-3">
                               <li className="flex gap-3 text-xs text-slate-500 font-medium leading-relaxed">
                                    <div className="w-1.5 h-1.5 bg-primary/40 rounded-full mt-1.5 shrink-0" />
-                                   Ism va familiyangizni to'liq hamda to'g'ri kiriting.
+                                   Ism va familiyangizni to&apos;liq hamda to&apos;g&apos;ri kiriting.
                               </li>
                               <li className="flex gap-3 text-xs text-slate-500 font-medium leading-relaxed">
                                    <div className="w-1.5 h-1.5 bg-primary/40 rounded-full mt-1.5 shrink-0" />
